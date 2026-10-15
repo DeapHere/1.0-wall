@@ -8,7 +8,7 @@ Keep all of these in one folder please:
 - `Wall-Settings.ahk` - all the settings, this is the one you edit
 - `lock.png` and `lock.wav` - the lock picture and sound
 - `resets.txt` - your reset count, the script makes this itself
-- `README.md` - this file your reading
+- `README.md` - this file you're reading
 
 ---
 
