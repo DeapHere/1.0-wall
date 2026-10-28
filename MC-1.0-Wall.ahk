@@ -38,6 +38,7 @@ global Locked := Map()   ; locked instance windows
 ; opens it. 1.0 counts anything under 250ms as a double click
 global SafeListGap := 300
 global ResetCount := 0
+global LearnedWait := 0     ; learned save and quit wait, see LearnSaveWait
 global PendingTrim := Map()  ; instances whose old worlds still need deleting
 global TrimScheduled := false
 
@@ -371,14 +372,17 @@ ClickButton(hwnd, which) {
         s++
     w := Ceil(cw / s), h := Ceil(ch / s)
     switch which {
-        ; save and quit gets clicked near its bottom edge, which is empty space on
-        ; the title screen, so it's harmless if the instance is already there
-        case "savequit":     gx := w // 2,      gy := h // 4 + 120  ; Save and Quit to Title
+        ; save and quit and singleplayer get clicked near their left end. if a
+        ; reset has to go round again these can land on the wrong screen, and
+        ; there they're empty space: the gaps on the title screen and pause
+        ; menu, and left of More World Options and below Game Mode on create
+        ; new world. on select world they can only pick a world, never open one
+        case "savequit":     gx := w // 2 - 90, gy := h // 4 + 120  ; Save and Quit to Title
         case "backtogame":   gx := w // 2,      gy := h // 4 + 18   ; Back to Game
-        case "singleplayer": gx := w // 2,      gy := h // 4 + 58   ; Singleplayer
+        case "singleplayer": gx := w // 2 - 90, gy := h // 4 + 64   ; Singleplayer
         ; create new world gets clicked near its right end. that spot is empty on
-        ; the title screen (quit game ends at w/2+100), so a missed singleplayer
-        ; click can't turn into a quit game click
+        ; the title screen (quit game ends at w/2+100), the pause menu and create
+        ; new world (cancel starts at h-28), so it's safe to click again
         case "create":       gx := w // 2 + 130, gy := h - 42       ; Create New World
     }
     x := cx + Floor((gx + 0.5) * s), y := cy + Floor((gy + 0.5) * s)
@@ -481,74 +485,148 @@ ResetList(list, alreadyQuit := false, refocus := true) {
 
 ResetSteps(list, alreadyQuit, refocus) {
     MouseGetPos(&ox, &oy)
-    started := A_Now
-    ; ready[i] = when instance i's next screen can be clicked. while one waits
-    ; the others get clicked, so 4 resets take barely longer than 1
-    ready := Map()
-    ; a world that's been played takes longer to save than a fresh one, so
-    ; Y / F6 in game gets its own wait
-    saveWait := alreadyQuit ? DelayAfterLeaving : DelayAfterSaveQuit
+    started := FileTimeNow()
+    ; a world that's been played takes longer to save, so Y / F6 in game
+    ; gets its own wait
+    saveWait := alreadyQuit ? DelayAfterLeaving : Max(DelayAfterSaveQuit, LearnedWait)
+    ; each instance goes save and quit > singleplayer > create > enter, then
+    ; the saves folder gets checked for a new world. no new world = it goes
+    ; round singleplayer > create > enter again. every click spot is empty on
+    ; the screens it isn't meant for, so going round again can't do anything bad
+    ; ready[i] = when instance i's next click can happen. whichever is ready
+    ; first goes next, so while one waits the others get clicked
+    ready := Map(), step := Map(), tries := Map(), listClick := Map(), requit := Map()
+    canCheck := Map()
+    ; never more than this long on one reset, in case a window closed or froze
+    deadline := A_TickCount + 20000
     for i in list {
         if !alreadyQuit {
             QuitTime[i] := A_Now
             ClickButton(Inst[i], "savequit")
         }
-        ready[i] := A_TickCount + saveWait
-    }
-    ; ClickTwice: 1.0 sometimes ignores a click so each one's done twice. the
-    ; spots are picked so a second click on the next screen hits empty space.
-    ; the two singleplayer clicks are at least SafeListGap apart so they can't
-    ; double click a world. the second one goes with create new world so the
-    ; gap doesn't cost anything
-    clicks := ClickTwice ? 2 : 1
-    for i in list {
-        WaitUntil(ready[i])
         ; old worlds get deleted after the reset (TrimPending), deleting
         ; here held up every singleplayer click
         if DeleteResetWorlds
             PendingTrim[i] := true
-        ClickButton(Inst[i], "singleplayer")
-        ready[i] := A_TickCount + (clicks = 2 ? Max(DelayBetweenScreens, SafeListGap) : DelayBetweenScreens)
+        ready[i] := A_TickCount + saveWait
+        step[i] := "singleplayer"
+        tries[i] := 0
+        listClick[i] := 0
+        requit[i] := 0
+        ; no saves folder = no way to tell if a world got made, so it just
+        ; goes through once like before
+        canCheck[i] := (SavesDir(i) != "")
     }
-    for i in list {
+    left := list.Clone()
+    failed := []
+    ; lag on the one being clicked is what makes clicks get missed, and the
+    ; lag comes from the others making their worlds. so while it's clicking,
+    ; the ones it isn't clicking get a lower priority. back to normal after
+    BusyPriorities(left)
+    while (left.Length > 0) {
+        n := 1
+        for k, i in left
+            if (ready[i] < ready[left[n]])
+                n := k
+        i := left[n]
         WaitUntil(ready[i])
-        if (clicks = 2) {
-            ClickButton(Inst[i], "singleplayer")   ; again in case the first got ignored
-            Sleep ClickFocusDelay                  ; give select world a moment
+        if (canCheck[i] && MadeNewWorld(i, started)) {
+            if (!alreadyQuit && requit[i] = 0)
+                LearnSaveWait(tries[i] <= 1)
+            left.RemoveAt(n)
+            BusyPriorities(left)
+            continue
         }
-        ClickButton(Inst[i], "create")
-        ready[i] := A_TickCount + DelayBetweenScreens
-    }
-    ; second create click in its own pass. a select world screen that just
-    ; opened can ignore the first one, and the other instances fill the wait
-    for i in list {
-        WaitUntil(ready[i])
-        if (clicks = 2)
+        if (!WinExist(Inst[i]) || A_TickCount > deadline)
+            step[i] := "giveup"
+        switch step[i] {
+        case "singleplayer":
+            ; still in the old world means save and quit got missed, usually
+            ; from resetting it before 1.0 opened the pause menu. 1.0 only
+            ; opens it once the window's been in the background for half a
+            ; second, so it gets put in the background first
+            if (tries[i] > 0 && !alreadyQuit && !LeftWorld(i, started)) {
+                requit[i] += 1
+                if (Mod(requit[i], 2) = 1) {
+                    if WinActive(Inst[i])
+                        FocusWall()
+                    ready[i] := A_TickCount + 600
+                } else {
+                    QuitTime[i] := A_Now
+                    ClickButton(Inst[i], "savequit")
+                    ready[i] := A_TickCount + DelayAfterLeaving
+                }
+                continue
+            }
+            ; if it's already on select world this lands on the world list,
+            ; and two clicks on a world under 250ms apart opens it. so never
+            ; two singleplayer clicks closer than SafeListGap
+            if (A_TickCount - listClick[i] < SafeListGap) {
+                ready[i] := listClick[i] + SafeListGap
+                continue
+            }
+            ClickButton(Inst[i], "singleplayer")
+            listClick[i] := A_TickCount
+            step[i] := "create"
+            ready[i] := A_TickCount + (ClickTwice ? Max(DelayBetweenScreens, SafeListGap) : DelayBetweenScreens)
+        case "create":
+            ; ClickTwice: 1.0 sometimes ignores a click so each one's done twice
+            if (ClickTwice && A_TickCount - listClick[i] >= SafeListGap) {
+                ClickButton(Inst[i], "singleplayer")
+                listClick[i] := A_TickCount
+                Sleep ClickFocusDelay       ; give select world a moment
+            }
             ClickButton(Inst[i], "create")
-        FinishCreate(i)             ; Enter
-        ready[i] := A_TickCount + 300
-    }
-    ; no new world yet = usually stuck on select world with the create click
-    ; ignored, so click create + enter again. only the create spot gets
-    ; clicked, it's empty on every other menu and nowhere near the world list
-    loop CreateRetries {
-        missed := []
-        for i in list {
-            WaitUntil(ready[i])
-            if !MadeNewWorld(i, started)
-                missed.Push(i)
-        }
-        if (missed.Length = 0)
-            break
-        for i in missed {
-            ClickButton(Inst[i], "create")
+            step[i] := "enter"
+            ready[i] := A_TickCount + DelayBetweenScreens
+        case "enter":
+            if ClickTwice
+                ClickButton(Inst[i], "create")
             FinishCreate(i)
-            ready[i] := A_TickCount + 300
+            tries[i] += 1
+            if !canCheck[i] {
+                left.RemoveAt(n)
+                BusyPriorities(left)
+                continue
+            }
+            ; a new world shows up straight away, so this is only a short
+            ; wait before checking
+            if (tries[i] > CreateRetries)
+                step[i] := "giveup"
+            else
+                step[i] := "singleplayer"
+            ready[i] := A_TickCount + 150
+        case "giveup":
+            ; out of tries and still no new world, leave it
+            if (CreateRetries > 0)
+                failed.Push(i)
+            left.RemoveAt(n)
+            BusyPriorities(left)
         }
     }
+    SetPriorities(0)
     MouseMove(ox, oy, 0)
     if refocus
         FocusWall()
+    if (failed.Length > 0) {
+        names := ""
+        for i in failed
+            names .= (names = "" ? "" : ", ") i
+        Notify("instance " names " didn't make a new world, press Y on it")
+    }
+}
+
+; how long saving takes changes from PC to PC and with lag. a click on
+; singleplayer while it's still saving gets thrown away, so this learns the
+; wait as it goes: a bit longer after a reset that had to go round again,
+; a bit shorter after one that worked first time. it never goes below
+; DelayAfterSaveQuit, and starts there each time the script starts
+LearnSaveWait(firstTime) {
+    global LearnedWait
+    if firstTime
+        LearnedWait := Max(DelayAfterSaveQuit, LearnedWait - 15)
+    else
+        LearnedWait := Min(1500, Max(DelayAfterSaveQuit, LearnedWait) + 80)
 }
 
 ; finds an instance's saves folder from the MultiMC path in its command line
@@ -584,12 +662,37 @@ MadeNewWorld(i, since) {
     saves := SavesDir(i)
     if (saves = "")
         return true
-    loop files saves "\*", "D" {
-        f := A_LoopFileFullPath "\session.lock"
-        if (FileExist(f) && FileGetTime(f) >= since)
+    loop files saves "\*", "D"
+        if (FileWriteTime(A_LoopFileFullPath "\session.lock") >= since)
             return true
-    }
     return false
+}
+
+; true if instance i saved a world since `since`. save and quit writes
+; level.dat, only its date is checked, same as above
+LeftWorld(i, since) {
+    saves := SavesDir(i)
+    if (saves = "")
+        return true
+    loop files saves "\*", "D"
+        if (FileWriteTime(A_LoopFileFullPath "\level.dat") >= since)
+            return true
+    return false
+}
+
+; the time right now, exact to the millisecond. A_Now only goes to the
+; second, so a world from the reset just before could pass as new
+FileTimeNow() {
+    DllCall("GetSystemTimeAsFileTime", "int64*", &t := 0)
+    return t
+}
+
+; when a file was last changed, exact like above. -1 if it isn't there
+FileWriteTime(path) {
+    info := Buffer(36, 0)
+    if !DllCall("GetFileAttributesExW", "str", path, "int", 0, "ptr", info)
+        return -1
+    return NumGet(info, 20, "int64")
 }
 
 ; runs once a reset's done, so the deleting doesn't slow the clicks down
@@ -904,6 +1007,24 @@ SetPriorities(playing) {
         try ProcessSetPriority(prio, pid)
         SetAffinity(pid, mask)
     }
+}
+
+; during a reset: normal for the ones still being clicked, below normal for
+; the rest. does nothing if FocusPlayedInstance is off
+BusyPriorities(clicking) {
+    if !FocusPlayedInstance
+        return
+    for n, hwnd in Inst {
+        prio := "BelowNormal"
+        for i in clicking
+            if (i = n)
+                prio := "Normal"
+        SetInstPriority(n, prio)
+    }
+}
+
+SetInstPriority(n, prio) {
+    try ProcessSetPriority(prio, WinGetPID(Inst[n]))
 }
 
 ; the last BackgroundCores cores (the played one usually sits on the first ones)

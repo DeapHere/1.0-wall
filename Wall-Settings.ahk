@@ -5,9 +5,9 @@
 ; has to match GUI Scale in video settings. 0 auto, 1 small, 2 normal, 3 large
 GuiScaleSetting := 0
 
-; ms to wait after save and quit before clicking singleplayer. it can be
-; this low because the script clicks the other instances while it waits.
-; raise it if it clicks texture packs or gets stuck on the title screen
+; ms to wait after save and quit before clicking singleplayer. this is the
+; shortest it'll wait, the script makes it longer on its own if your saves
+; take longer (it goes back down when they don't)
 DelayAfterSaveQuit := 50
 
 ; same thing but for Y / F6 while playing. a world you've been in takes
@@ -21,16 +21,17 @@ DelayBetweenScreens := 250
 ; Y/F6 in game: true makes a new world after quitting, false stops on the title screen
 CreateWorldAfterLeaving := true
 
-; click every menu twice. older versions of the wall I had previously made needed this because
+; click every menu twice. older versions of the wall needed this because
 ; 1.0 would sometimes ignore a click, but the reset's been reworked since
-; and single clicks are reliable now 'Prayge', so it's off. turn it on if an
+; and single clicks are reliable now, so it's off. turn it on if an
 ; instance keeps getting stuck on a menu (costs about a second per reset)
 ClickTwice := false
 
-; after a reset, check each saves folder for a fresh session.lock (just the
-; file date). if a world didn't get made, click create + enter again.
-; this is how many tries, 0 = off
-CreateRetries := 2
+; after clicking create + enter, the saves folder gets checked for a new
+; world (just the file dates). if there isn't one it goes round
+; singleplayer > create > enter again. this is how many times it goes round
+; before giving up, 0 = off
+CreateRetries := 6
 
 ; click speed: 1 slow, 2 fast, 3 faster. doesn't change the menu delays.
 ; back to 2 if clicks get ignored
@@ -41,7 +42,7 @@ BackgroundClicks := false
 
 ; delete the oldest New World folders on reset so saves doesn't fill up.
 ; always keeps the newest KeepNewestWorlds (the 5 before a run have to be
-; kept, A.7.8). 
+; kept, A.7.8). cleared with a mod
 DeleteResetWorlds := true
 
 ; how many of the newest worlds to keep
