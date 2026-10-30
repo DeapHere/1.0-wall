@@ -5,9 +5,9 @@
 ; has to match GUI Scale in video settings. 0 auto, 1 small, 2 normal, 3 large
 GuiScaleSetting := 0
 
-; ms to wait after save and quit before clicking singleplayer. this is the
-; shortest it'll wait, the script makes it longer on its own if your saves
-; take longer (it goes back down when they don't)
+; ms to wait after save and quit before clicking singleplayer. it can be
+; this low because the script clicks the other instances while it waits.
+; raise it if it clicks texture packs or gets stuck on the title screen
 DelayAfterSaveQuit := 50
 
 ; same thing but for Y / F6 while playing. a world you've been in takes
@@ -27,15 +27,15 @@ CreateWorldAfterLeaving := true
 ; instance keeps getting stuck on a menu (costs about a second per reset)
 ClickTwice := false
 
-; after clicking create + enter, the saves folder gets checked for a new
-; world (just the file dates). if there isn't one it goes round
-; singleplayer > create > enter again. this is how many times it goes round
-; before giving up, 0 = off
-CreateRetries := 6
+; after a reset, check each saves folder for a fresh session.lock (just the
+; file date). if a world didn't get made, click create + enter again, or
+; do the whole reset again if save and quit got missed. this is how many
+; tries, 0 = off
+CreateRetries := 2
 
 ; click speed: 1 slow, 2 fast, 3 faster. doesn't change the menu delays.
 ; back to 2 if clicks get ignored
-Speed := 2
+Speed := 1
 
 ; background clicks don't work on 1.0, keep false
 BackgroundClicks := false
@@ -121,6 +121,6 @@ KeyPlay2 := "e"                 ; set to "" to turn off
 KeyReset := "y"
 KeyResetAll := "t"
 KeyFocusReset := "f"
-KeyLock := "r"                  ; lock / unlock
+KeyLock := "4"                  ; lock / unlock
 KeyResetWhilePlaying := "F6"
 KeyRescan := "^!l"              ; Ctrl+Alt+L

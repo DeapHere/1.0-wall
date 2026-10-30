@@ -117,7 +117,7 @@ In game, **Y** or **F6** saves and quits, makes a new world and puts you back on
 A few things to know:
 
 - The mouse moves on its own while it's resetting, that's just the script clicking the menus.
-- Close your inventory or any menu before pressing Y / F6.
+- Y / F6 works from the death screen too, and if your inventory was open it sorts itself out, it just takes a couple of seconds longer.
 - Playing a locked instance or resetting it with Y unlocks it.
 - If you want to keep a run, leave with Esc > Save and quit to title instead of Y. Then rename its folder in that instance's `.minecraft\saves` to something like `RUN 1` so auto delete never touches it. Renaming the world in game doesn't change the folder name, so do it in the folder.
 
@@ -130,7 +130,7 @@ Everything's in `Wall-Settings.ahk`. Open it in Notepad, change what you want, s
 - `DelayBetweenScreens` (250) - wait between the other menus.
 - `ClickFocusDelay` (100) - wait after bringing an instance to the front before clicking.
 - `ClickTwice` (false) - clicks every menu twice. Older versions needed it, now it's only worth turning on if instances keep getting stuck.
-- `CreateRetries` (6) - if an instance didn't make a new world, it goes through singleplayer, create new world and enter again, up to this many times. 0 turns it off.
+- `CreateRetries` (6) - if an instance didn't make a new world, it goes through singleplayer, create new world and enter again, up to this many times. If it's still in the old world it puts it in the background for a second (so 1.0 opens the pause menu) and quits it again first. 0 turns it off.
 - `DeleteResetWorlds` (true) - deletes old New World folders, one at a time between resets and never during a run.
 - `KeepNewestWorlds` (6) - how many worlds each instance always keeps.
 - `BackgroundCores` (1) - how many CPU cores the other instances get while you're playing one.
@@ -154,16 +154,16 @@ The hotkeys are at the bottom of the file if you want different keys.
 
 ## Rules
 
-This is going off the speedrun.com Minecraft Java rules (v2).
+This is going off the speedrun.com Minecraft Java rules (v8).
 
-- **Multi instance:** every instance needs its own folder (A.9.1) and all of them have to be recorded (A.9.2 / A.9.2.a). Pausing the others while you play one is fine (A.3.6.a), but switching instances mid run makes that run unverifiable (A.3.6).
+- **Multi instance:** every instance needs its own folder (A.9.1) and all of them have to be recorded (A.9.2). Pausing the others while you play one is fine (A.3.6.a), but switching instances mid run makes that run unverifiable (A.3.6).
 - **Resets:** every reset comes from a key press (A.10.5). One key resetting more than one instance is allowed. The script doesn't read your screen.
 - **During a run:** no macros apart from resizing (A.10.4). The play key only unpauses before the run starts, and Y / F6 ends the run.
 - **Pause on lost focus** stays on (A.6.2.b). 1.0 doesn't have an option to turn it off anyway.
 - **F3:** can't be shown before or during a run on anything before 1.3 (B.2.1).
-- **Mods:** only ones on the allowed list (A.8.8).
+- **Mods:** only builds on the legal-builds list (A.8.5).
 - **Worlds:** you have to keep the 5 worlds before a run (A.7.8). Auto delete always keeps the newest 6 plus the one that was just made. Keep the world folder of anything you submit (sub 30 or WR pace) until it's verified (A.7.2.a).
 - **Auto delete:** only reads folder names and file dates, never what's inside the files, and never runs during a run. This was cleared with a moderator.
-- **New world check:** after a reset the script looks at the date on `session.lock` in the saves folder to see if a new world started, and goes through the menus again if it didn't. It also looks at the date on `level.dat` to tell if save and quit got missed. Same as auto delete, it only reads the dates.
+- **New world check:** after a reset the script looks at the date on `session.lock` in the saves folder to see if a new world started, and goes through the menus again if it didn't. It also looks at the dates on `level.dat` to tell if save and quit got missed (1.0 saves it every 2 seconds while a world is running, and once when you quit). Same as auto delete, it only reads the dates.
 
-Full rules are here: [Minecraft Java Edition speedrunning rules (v2)](https://rawcdn.githack.com/Minecraft-Java-Edition-Speedrunning/rules/main/pub/pdf/rules_v2.pdf)
+Full rules are here: [Minecraft Java Edition speedrunning rules (v8)](https://github.com/Minecraft-Java-Edition-Speedrunning/rules/blob/main/pub/pdf/rules_v8.pdf)

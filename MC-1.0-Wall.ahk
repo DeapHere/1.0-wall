@@ -378,6 +378,10 @@ ClickButton(hwnd, which) {
         ; menu, and left of More World Options and below Game Mode on create
         ; new world. on select world they can only pick a world, never open one
         case "savequit":     gx := w // 2 - 90, gy := h // 4 + 120  ; Save and Quit to Title
+        ; Save and Quit on the pause menu and Title Menu on the death screen
+        ; both cover this spot. it's Texture Packs on the title screen, so
+        ; it's only used when the world's still running (see ResetSteps)
+        case "quitalive":    gx := w // 2 - 90, gy := h // 4 + 110
         case "backtogame":   gx := w // 2,      gy := h // 4 + 18   ; Back to Game
         case "singleplayer": gx := w // 2 - 90, gy := h // 4 + 64   ; Singleplayer
         ; create new world gets clicked near its right end. that spot is empty on
@@ -497,8 +501,11 @@ ResetSteps(list, alreadyQuit, refocus) {
     ; first goes next, so while one waits the others get clicked
     ready := Map(), step := Map(), tries := Map(), listClick := Map(), requit := Map()
     canCheck := Map()
+    ; quitAt[i] = when save and quit was last clicked, firstSave[i] = the first
+    ; level.dat save after that, alive[i] = the old world's still running
+    quitAt := Map(), firstSave := Map(), alive := Map()
     ; never more than this long on one reset, in case a window closed or froze
-    deadline := A_TickCount + 20000
+    deadline := A_TickCount + 30000
     for i in list {
         if !alreadyQuit {
             QuitTime[i] := A_Now
@@ -513,6 +520,9 @@ ResetSteps(list, alreadyQuit, refocus) {
         tries[i] := 0
         listClick[i] := 0
         requit[i] := 0
+        quitAt[i] := started
+        firstSave[i] := 0
+        alive[i] := false
         ; no saves folder = no way to tell if a world got made, so it just
         ; goes through once like before
         canCheck[i] := (SavesDir(i) != "")
@@ -537,25 +547,30 @@ ResetSteps(list, alreadyQuit, refocus) {
             BusyPriorities(left)
             continue
         }
+        ; checked every time round so the first save after quitting gets seen
+        if canCheck[i]
+            alive[i] := alive[i] || WorldRunning(i, quitAt[i], firstSave)
         if (!WinExist(Inst[i]) || A_TickCount > deadline)
             step[i] := "giveup"
         switch step[i] {
         case "singleplayer":
-            ; still in the old world means save and quit got missed, usually
-            ; from resetting it before 1.0 opened the pause menu. 1.0 only
-            ; opens it once the window's been in the background for half a
-            ; second, so it gets put in the background first
-            if (tries[i] > 0 && !alreadyQuit && !LeftWorld(i, started)) {
-                requit[i] += 1
-                if (Mod(requit[i], 2) = 1) {
-                    if WinActive(Inst[i])
-                        FocusWall()
-                    ready[i] := A_TickCount + 600
-                } else {
-                    QuitTime[i] := A_Now
-                    ClickButton(Inst[i], "savequit")
-                    ready[i] := A_TickCount + DelayAfterLeaving
-                }
+            ; is it still in the old world? save and quit gets missed when
+            ; the world was still loading or 1.0 hadn't opened the pause menu
+            ; yet, and on the death screen there's no pause menu at all.
+            ; 1.0 saves level.dat every 2 seconds while a world runs, so a new
+            ; level.dat on its own doesn't mean it left (alive covers that).
+            ; a paused world doesn't save, that's what LeftWorld catches. after
+            ; two misses in a row it quits again anyway, since a world that
+            ; saved once and then paused looks the same as one that left.
+            ; it's all safe on the title screen, so going round can't hurt
+            if (tries[i] > 0 && requit[i] < 3
+                && (alive[i] || !LeftWorld(i, started) || tries[i] >= 2)) {
+                ; 1.0 only opens the pause menu once the window's been in the
+                ; background for half a second, so it goes there first
+                if WinActive(Inst[i])
+                    FocusWall()
+                step[i] := "requit"
+                ready[i] := A_TickCount + 1200
                 continue
             }
             ; if it's already on select world this lands on the world list,
@@ -596,6 +611,18 @@ ResetSteps(list, alreadyQuit, refocus) {
             else
                 step[i] := "singleplayer"
             ready[i] := A_TickCount + 150
+        case "requit":
+            ; a running world means it can't be on the title screen, so it
+            ; gets the spot that's also Title Menu on the death screen
+            QuitTime[i] := A_Now
+            quitAt[i] := FileTimeNow()
+            ClickButton(Inst[i], alive[i] ? "quitalive" : "savequit")
+            firstSave[i] := 0
+            alive[i] := false
+            requit[i] += 1
+            tries[i] := 0           ; it gets its full retries once it's out
+            step[i] := "singleplayer"
+            ready[i] := A_TickCount + DelayAfterLeaving
         case "giveup":
             ; out of tries and still no new world, leave it
             if (CreateRetries > 0)
@@ -678,6 +705,32 @@ LeftWorld(i, since) {
         if (FileWriteTime(A_LoopFileFullPath "\level.dat") >= since)
             return true
     return false
+}
+
+; true if instance i's world is still running since save and quit was
+; clicked at `since`. save and quit saves level.dat once, a running world
+; saves it every 2 seconds, so two saves a second or more apart = running.
+; firstSave keeps the first one it saw, only dates are checked
+WorldRunning(i, since, firstSave) {
+    t := NewestLevelDat(i)
+    if (t <= since)
+        return false
+    if (firstSave[i] = 0) {
+        firstSave[i] := t
+        return false
+    }
+    return (t - firstSave[i] >= 10000000)   ; 1 second, in 100ns steps
+}
+
+; date of the newest level.dat in instance i's saves, -1 if none
+NewestLevelDat(i) {
+    newest := -1
+    saves := SavesDir(i)
+    if (saves = "")
+        return newest
+    loop files saves "\*", "D"
+        newest := Max(newest, FileWriteTime(A_LoopFileFullPath "\level.dat"))
+    return newest
 }
 
 ; the time right now, exact to the millisecond. A_Now only goes to the
